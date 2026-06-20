@@ -3,77 +3,145 @@
 #include <stdlib.h>
 #include <string.h>
 
+
+typedef struct {
+    element_t g;   // generator
+    element_t sk;  // secret key
+    element_t pk;  // public key
+} KeyPair;
+
+
+// =========== 把message雜湊 =========== 
 void hash_to_G1(element_t h, const char *message) {
     element_from_hash(h, message, strlen(message));
 }
 
-int main() {
-    
-    //打開param檔案，檔案路徑可改。
-    FILE *fp = fopen("../pbc-1.0.0/param/a.param", "rb");
-    if (!fp) {
-        printf("Error opening param file\n");
-        return 1;
-    }
 
-    //讀取param檔案的長度。
+// ======= 讀取param並初始化pairing =======
+int init_pairing_from_file(pairing_t pairing, const char *filename) {
+
+    // 打開param檔案。
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) return 0;
+
+    // 讀取param檔案的長度。
     fseek(fp, 0, SEEK_END);
     long fsize = ftell(fp);
     rewind(fp);
 
-    //把param檔案的內容存進param字串。
+    // 把param檔案的內容存進param字串。
     char *param = malloc(fsize + 1);
     fread(param, 1, fsize, fp);
     fclose(fp);
     param[fsize] = '\0';
 
-    //初始化pairing參數。
-    pairing_t pairing;
+    // 初始化pairing參數。
     pairing_init_set_buf(pairing, param, fsize);
 
-    //印出param內容。
+    // 印出param內容。
     printf("===== PARAM CONTENT =====\n");
     printf("%s", param);
     printf("=========================\n");
-    
+
     free(param);
 
-    // ======= 生成公私鑰 =======
-    element_t g, sk, pk;
-    element_init_G1(g, pairing);    //g = generator。 橢圓曲線群G1上的一個點。
-    element_init_Zr(sk, pairing);   //sk = secret key。 Zr群中的一個常數。
-    element_init_G1(pk, pairing);   //pk = private key。
+    return 1;
+}
 
-    element_random(g);
-    element_random(sk);
-    element_pow_zn(pk, g, sk);      //pk = g^sk; g做sk次點加法，也是橢圓曲線群G1上的一個點。
 
-    // ========== 訊息 ==========
-    char *message = "Hello BLS Signature!";
+// ============ 生成公私鑰 ============
+void generate_keypair(pairing_t pairing, KeyPair *key) {
 
-    // ========== 簽章 ==========
-    element_t h, sig;
+    // 初始化。
+    element_init_G1(key->g, pairing);   // generator
+    element_init_Zr(key->sk, pairing);  // secret key
+    element_init_G1(key->pk, pairing);  // public key
+
+    element_random(key->g);     // 橢圓曲線群G1上的一個點。
+    element_random(key->sk);    // Zr群中的一個常數。
+
+    element_pow_zn(key->pk, key->g, key->sk);  // pk = g^sk; g做sk次點加法，也是橢圓曲線群G1上的一個點。
+}
+
+
+// =============== 簽章 ===============
+void bls_sign(pairing_t pairing, const char *message, KeyPair *key, element_t sig) {
+
+    element_t h;
+
     element_init_G1(h, pairing);
-    element_init_G1(sig, pairing);  //sig = signature 
+    element_init_G1(sig, pairing);  // signature
 
-    hash_to_G1(h, message);         //H(m)，雜湊過後的message，橢圓曲線群G1上的一個點。 
-    element_pow_zn(sig, h, sk);     //sig = H(m)^sk; H(m)做sk次點加法，也是橢圓曲線群G1上的一個點。
+    hash_to_G1(h, message);  // H(m)，雜湊過後的message，橢圓曲線群G1上的一個點。
 
-    // ========== 驗證 ==========
-    element_t left, right;
-    element_init_GT(left, pairing);
-    element_init_GT(right, pairing);
+    element_pow_zn(sig, h, key->sk);  // sig = H(m)^sk; H(m)做sk次點加法，也是橢圓曲線群G1上的一個點。
 
-    //e()把G1上的兩個點被映射到另一個群GT上，GT是有限域乘法群。
-    pairing_apply(left, sig, g, pairing);   //left = e(sig, g);
-    pairing_apply(right, h, pk, pairing);   //right = e(h, pk)
+    element_clear(h);
+}
 
-    //輸出結果。
-    if (!element_cmp(left, right)) {
+
+// =============== 驗證 ===============
+int bls_verify(pairing_t pairing, const char *message, element_t sig, KeyPair *key) {
+
+    element_t h;
+    element_t temp1;
+    element_t temp2;
+
+    // 初始化。
+    element_init_G1(h, pairing);
+    element_init_GT(temp1, pairing);
+    element_init_GT(temp2, pairing);
+
+    hash_to_G1(h, message);  // H(m)，雜湊過後的message，橢圓曲線群G1上的一個點。
+
+    // e()把G1上的兩個點被映射到另一個群GT上，GT是有限域乘法群。
+    pairing_apply(temp1, sig, key->g, pairing); // temp1 = e(sig, g)
+    pairing_apply(temp2, h, key->pk, pairing);  // temp2 = e(h, pk)
+
+    int result = !element_cmp(temp1, temp2);    // 比較temp1是否等於temp2。
+
+    element_clear(h);
+    element_clear(temp1);
+    element_clear(temp2);
+
+    return result;
+}
+
+
+void clear_keypair(KeyPair *key) {
+
+    element_clear(key->g);
+    element_clear(key->sk);
+    element_clear(key->pk);
+}
+
+
+int main() {
+
+    pairing_t pairing;
+
+    if (!init_pairing_from_file(pairing, "../pbc-1.0.0/param/a.param")) {
+        printf("Error opening param file\n");
+        return 1;
+    }
+
+    KeyPair key;
+    generate_keypair(pairing, &key);
+
+    const char *message = "Hello BLS Signature!";
+
+    element_t sig;
+    bls_sign(pairing, message, &key, sig);
+
+    if (bls_verify(pairing, message, sig, &key)) {
         printf("驗證成功\n");
     } else {
         printf("驗證失敗\n");
     }
-    
+
+    element_clear(sig);
+    clear_keypair(&key);
+    pairing_clear(pairing);
+
     return 0;
 }
