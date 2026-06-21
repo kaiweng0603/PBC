@@ -40,7 +40,7 @@ int init_pairing_from_file(pairing_t pairing, const char *filename) {
 
     // 印出param內容。
     printf("===== PARAM CONTENT =====\n");
-    printf("%s", param);
+    printf("%s\n", param);
     printf("=========================\n");
 
     free(param);
