@@ -122,7 +122,7 @@ int main() {
 
    if (!init_pairing_from_file(
         pairing,
-        "/mnt/c/Users/user/Downloads/pbc-0.5.14/param/a.param"))
+        "param/a.param"))
     {
     printf("Error opening param file\n");
     return 1;
