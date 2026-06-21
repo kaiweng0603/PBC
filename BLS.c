@@ -118,122 +118,121 @@ void clear_keypair(KeyPair *key) {
 
 int main() {
 
-    pairing_t pairing;
+```
+pairing_t pairing;
 
-    if (!init_pairing_from_file(pairing, "param/a.param")) {
-        printf("Error opening param file\n");
-        return 1;
-    }
-
-    KeyPair key;
-    generate_keypair(pairing, &key);
-
-    int msg_count;
-
-    printf("\n====================================\n");
-    printf("     BLS Multiple Message System\n");
-    printf("====================================\n");
-
-    printf("請輸入訊息數量: ");
-    scanf("%d", &msg_count);
-    getchar();
-
-    for (int i = 0; i < msg_count; i++) {
-
-        char message[256];
-
-        printf("\n------------------------------------\n");
-        printf("Message %d: ", i + 1);
-
-        fgets(message, sizeof(message), stdin);
-
-        message[strcspn(message, "\n")] = 0;
-
-        element_t sig;
-
-        // Alice 簽章
-        bls_sign(pairing, message, &key, sig);
-
-        printf("\n[Alice]\n");
-        printf("訊息: %s\n", message);
-        printf("已成功生成簽章\n");
-
-        // 壓縮簽章
-        int compressed_size =
-            pairing_length_in_bytes_compressed_G1(pairing);
-
-        int original_size =
-            pairing_length_in_bytes_G1(pairing);
-
-        unsigned char *data =
-            malloc(compressed_size);
-
-        element_to_bytes_compressed(data, sig);
-
-        printf("\n[Network]\n");
-        printf("原始簽章大小 : %d bytes\n",
-               original_size);
-
-        printf("壓縮後大小   : %d bytes\n",
-               compressed_size);
-
-        printf("準備進行模擬傳輸...\n");
-
-        // Bob 收到資料
-        element_clear(sig);
-
-        element_init_G1(sig, pairing);
-
-        element_from_bytes_compressed(sig, data);
-
-        free(data);
-
-        printf("\n[Bob]\n");
-        printf("已成功接收並還原簽章\n");
-
-        // 驗證
-        if (bls_verify(pairing,
-                       message,
-                       sig,
-                       &key)) {
-
-            printf("驗證成功\n");
-        }
-        else {
-
-            printf("驗證失敗\n");
-        }
-
-        // 攻擊測試
-        printf("\n[Attack Test]\n");
-
-        char fake_message[256];
-
-        strcpy(fake_message, message);
-
-        strcat(fake_message, "_HACK");
-
-        printf("原始訊息 : %s\n", message);
-        printf("竄改訊息 : %s\n", fake_message);
-
-        if (bls_verify(pairing,
-                       fake_message,
-                       sig,
-                       &key)) {
-
-            printf("攻擊成功 (不正常)\n");
-        }
-        else {
-
-            printf("攻擊失敗，驗證拒絕\n");
-        }
-
-        element_clear(sig);
-    }
-
-    clear_keypair(&key);
-
-    pairing_clear(pairing);
-
-    return 0;
+if (!init_pairing_from_file(pairing, "param/a.param")) {
+    printf("Error opening param file\n");
+    return 1;
 }
+
+KeyPair key;
+generate_keypair(pairing, &key);
+
+char message[256];
+
+printf("\n====================================\n");
+printf("      BLS Signature System V1\n");
+printf("====================================\n");
+
+printf("請輸入訊息: ");
+
+fgets(message, sizeof(message), stdin);
+
+message[strcspn(message, "\n")] = 0;
+
+element_t sig;
+
+bls_sign(pairing, message, &key, sig);
+
+printf("\n[Alice]\n");
+printf("訊息: %s\n", message);
+
+element_printf("\nPublic Key:\n%B\n", key.pk);
+
+element_printf("\nSignature:\n%B\n", sig);
+
+int original_size =
+    pairing_length_in_bytes_G1(pairing);
+
+int compressed_size =
+    pairing_length_in_bytes_compressed_G1(pairing);
+
+unsigned char *data =
+    malloc(compressed_size);
+
+element_to_bytes_compressed(data, sig);
+
+printf("\n[Network]\n");
+
+printf("原始簽章大小 : %d bytes\n",
+       original_size);
+
+printf("壓縮後大小 : %d bytes\n",
+       compressed_size);
+
+printf("節省空間 : %.2f%%\n",
+       100.0 *
+       (original_size - compressed_size)
+       / original_size);
+
+element_clear(sig);
+
+element_init_G1(sig, pairing);
+
+element_from_bytes_compressed(sig, data);
+
+free(data);
+
+printf("\n[Bob]\n");
+printf("已成功接收並還原簽章\n");
+
+if (bls_verify(pairing,
+               message,
+               sig,
+               &key)) {
+
+    printf("驗證成功\n");
+}
+else {
+
+    printf("驗證失敗\n");
+}
+
+printf("\n===== Attack Test =====\n");
+
+char fake_message[256];
+
+strcpy(fake_message, message);
+
+strcat(fake_message, "_HACK");
+
+printf("原始訊息 : %s\n",
+       message);
+
+printf("竄改訊息 : %s\n",
+       fake_message);
+
+if (bls_verify(pairing,
+               fake_message,
+               sig,
+               &key))
+{
+    printf("攻擊成功 (異常)\n");
+}
+else
+{
+    printf("攻擊失敗，驗證拒絕\n");
+}
+
+element_clear(sig);
+
+clear_keypair(&key);
+
+pairing_clear(pairing);
+
+return 0;
+```
+
+}
+
