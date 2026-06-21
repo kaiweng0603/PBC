@@ -24,7 +24,7 @@ int init_pairing_from_file(pairing_t pairing, const char *filename) {
     FILE *fp = fopen(filename, "rb");
     if (!fp) return 0;
 
-    // 讀取param檔案的長度。
+    // 移動指標到檔案末尾以計算檔案大小
     fseek(fp, 0, SEEK_END);
     long fsize = ftell(fp);
     rewind(fp);
@@ -64,7 +64,7 @@ void generate_keypair(pairing_t pairing, KeyPair *key) {
 }
 
 
-// =============== 簽章 ===============
+// =============== 執行 BLS 數位簽章 ===============
 void bls_sign(pairing_t pairing, const char *message, KeyPair *key, element_t sig) {
 
     element_t h;
@@ -80,7 +80,7 @@ void bls_sign(pairing_t pairing, const char *message, KeyPair *key, element_t si
 }
 
 
-// =============== 驗證 ===============
+// =============== 執行單人簽章驗證 ===============
 int bls_verify(pairing_t pairing, const char *message, element_t sig, KeyPair *key) {
 
     element_t h;
@@ -107,20 +107,19 @@ int bls_verify(pairing_t pairing, const char *message, element_t sig, KeyPair *k
     return result;
 }
 
-
+// ============ 釋放金鑰結構體的記憶體 ============
 void clear_keypair(KeyPair *key) {
-
     element_clear(key->g);
     element_clear(key->sk);
     element_clear(key->pk);
 }
 
-void aggregate_demo(pairing_t pairing)
-{
-    #define USER_COUNT 3
+// =============== BLS 聚合簽章展示 (不同訊息方案) ===============
+void aggregate_demo(pairing_t pairing){
+    #define USER_COUNT 3 //模擬3位使用者
 
     KeyPair users[USER_COUNT];
-
+    // 模擬 3 位使用者各自想要簽署的不同訊息內容
     char *messages[USER_COUNT] = {
         "Hello",
         "World",
@@ -131,254 +130,185 @@ void aggregate_demo(pairing_t pairing)
     printf("      Aggregate Signature Demo\n");
     printf("====================================\n");
 
-    generate_keypair(pairing,
-                 &users[0]);
+    // 生成第 1 位使用者的金鑰，作為基準點
+    generate_keypair(pairing,&users[0]);
 
-for(int i=1;i<USER_COUNT;i++)
-{
-    generate_keypair(pairing,
-                     &users[i]);
+    // 生成其餘使用者的金鑰，並將他們的基點 g 同步對齊
+    for(int i=1;i<USER_COUNT;i++){
+        generate_keypair(pairing,&users[i]);
 
-    element_set(users[i].g,
-                users[0].g);
+        // 多人聚合必須共用同一個基點 g，因此強制複製 users[0].g
+        element_set(users[i].g,users[0].g);
 
-    element_pow_zn(users[i].pk,
-                   users[i].g,
-                   users[i].sk);
-}
+        // 基點改變後，必須重新用各自的私鑰計算出對應的公鑰 pk = g^sk
+        element_pow_zn(users[i].pk,users[i].g,users[i].sk);
+    }
 
     element_t agg_sig;
 
-    element_init_G1(agg_sig,
-                    pairing);
+    element_init_G1(agg_sig,pairing);
 
-    element_set1(agg_sig);
+    element_set1(agg_sig); // 初始化：將聚合簽章設為群的單位元（乘法群的 1）
 
-    for(int i=0;i<USER_COUNT;i++)
-    {
+    // --- 簽章與聚合階段 ---
+    for(int i=0;i<USER_COUNT;i++){
         element_t sig;
 
-        bls_sign(pairing,
-                 messages[i],
-                 &users[i],
-                 sig);
+        // 每位使用者用自己的私鑰，對各自的訊息進行標準 BLS 簽章
+        bls_sign(pairing,messages[i],&users[i],sig);
 
-        printf("\nUser %d\n",
-               i + 1);
-
-        printf("Message : %s\n",
-               messages[i]);
-
-        element_mul(agg_sig,
-                    agg_sig,
-                    sig);
+        printf("\nUser %d\n",i + 1);
+        printf("Message : %s\n",messages[i]);
+        
+        // 核心聚合公式：agg_sig = ∏ sig_i。
+        element_mul(agg_sig,agg_sig,sig);
 
         element_clear(sig);
     }
 
+    // --- 聚合驗證階段 (由驗證端執行) ---
     element_t left;
     element_t right;
 
-    element_init_GT(left,
-                    pairing);
+    element_init_GT(left,pairing);
+    element_init_GT(right,pairing);
 
-    element_init_GT(right,
-                    pairing);
+    // 計算驗證左式：e(agg_sig, g)。只需做「1次」雙線性對運算
+    pairing_apply(left,agg_sig,users[0].g,pairing);
 
-    pairing_apply(left,
-                  agg_sig,
-                  users[0].g,
-                  pairing);
-
+    // 初始化驗證右式連乘積為 1
     element_set1(right);
 
-    for(int i=0;i<USER_COUNT;i++)
-    {
+    // 計算驗證右式：∏ e(H(m_i), PK_i)。
+    // 因為每個人簽的訊息不同，驗證端必須分別計算每個訊息的雜湊與公鑰配對，再全部乘起來。
+    for(int i=0;i<USER_COUNT;i++){
         element_t h;
         element_t temp;
 
-        element_init_G1(h,
-                        pairing);
+        element_init_G1(h,pairing);
+        element_init_GT(temp,pairing);
 
-        element_init_GT(temp,
-                        pairing);
-
-        hash_to_G1(h,
-                   messages[i]);
-
-        pairing_apply(temp,
-                      h,
-                      users[i].pk,
-                      pairing);
-
-        element_mul(right,
-                    right,
-                    temp);
+        hash_to_G1(h,messages[i]);                  // 計算 H(m_i)
+        pairing_apply(temp,h,users[i].pk,pairing);  // 計算 e(H(m_i), PK_i)
+        element_mul(right,right,temp);              // 右式累乘：right = right * temp
 
         element_clear(h);
         element_clear(temp);
     }
 
     printf("\n");
-
-    if(!element_cmp(left,
-                    right))
-    {
+    // 若 e(∏ sig_i, g) == ∏ e(H(m_i), PK_i)，則代表這 3 個簽章皆合法
+    if(!element_cmp(left,right))
         printf("Aggregate Verify Success\n");
-    }
     else
-    {
         printf("Aggregate Verify Failed\n");
-    }
 
     element_clear(left);
     element_clear(right);
     element_clear(agg_sig);
 
-    for(int i=0;i<USER_COUNT;i++)
-    {
+    for(int i=0;i<USER_COUNT;i++){
         clear_keypair(&users[i]);
     }
 }
 
-
+// ============ 選單與單人簽章流程 ============
 int main() {
-int choice;
+    int choice;
 
-pairing_t pairing;
+    pairing_t pairing;
+    // 初始化 pairing 矩陣
+    if (!init_pairing_from_file(pairing, "param/a.param")){
+        printf("Error opening param file\n");
+        return 1;
+    }
 
-if (!init_pairing_from_file(pairing, "param/a.param")) {
-    printf("Error opening param file\n");
-    return 1;
-}
+    // 列印功能選擇選單
+    printf("\n");
+    printf("1. Multiple Message Demo\n");
+    printf("2. Aggregate Signature Demo\n");
+    printf("\nChoose: ");
+    scanf("%d",&choice);
+    getchar();
 
-printf("\n");
-printf("1. Multiple Message Demo\n");
-printf("2. Aggregate Signature Demo\n");
+    // 若使用者選擇 2，進入聚合簽章展示
+    if(choice == 2){
+        aggregate_demo(pairing);
+        pairing_clear(pairing);
+        return 0;
+    }
 
-printf("\nChoose: ");
+    // --- 單人簽章流程（含點壓縮傳輸與破壞測試） ---
+    KeyPair key;
+    generate_keypair(pairing,&key);
+    char message[256];
 
-scanf("%d",
-      &choice);
+    printf("\n====================================\n");
+    printf("      BLS Signature System V1\n");
+    printf("====================================\n");
 
-getchar();
+    printf("請輸入訊息: ");
+    fgets(message, sizeof(message), stdin);
+    message[strcspn(message, "\n")] = 0;
 
-if(choice == 2)
-{
-    aggregate_demo(pairing);
+    // Alice 執行簽章
+    element_t sig;
+    bls_sign(pairing, message, &key, sig);
 
+    printf("\n[Alice]\n");
+    printf("訊息: %s\n", message);
+
+    element_printf("\nPublic Key:\n%B\n", key.pk);
+    element_printf("\nSignature:\n%B\n", sig);
+
+    // --- 模擬真實網路傳輸 ---
+    int original_size = pairing_length_in_bytes_G1(pairing);                // 取得原始未壓縮點大小
+    int compressed_size = pairing_length_in_bytes_compressed_G1(pairing);   // 取得點壓縮後大小
+    unsigned char *data = malloc(compressed_size);                          // 動態配置壓縮後的簽章存儲空間
+    element_to_bytes_compressed(data, sig);
+
+    printf("\n[Network]\n");
+    printf("原始簽章大小 : %d bytes\n",original_size);
+    printf("壓縮後大小 : %d bytes\n",compressed_size);
+    printf("節省空間 : %.2f%%\n",100.0 *(original_size - compressed_size) / original_size);
+
+    // --- 模擬接收端 Bob ---
+    element_clear(sig);
+    element_init_G1(sig, pairing);
+
+    // Bob 從網路上收到的 data 陣列中，重新還原並解壓縮出簽章點
+    element_from_bytes_compressed(sig, data);
+    free(data);
+
+    printf("\n[Bob]\n");
+    printf("已成功接收並還原簽章\n");
+
+    // 進行簽章合法性驗證
+    if (bls_verify(pairing,message,sig,&key)) 
+        printf("驗證成功\n");
+    else 
+        printf("驗證失敗\n");
+
+    // --- 黑客篡改攻擊測試 ---
+    printf("\n===== Attack Test =====\n");
+
+    char fake_message[300]; // 加大容量，預留空間給 _HACK
+
+    strcpy(fake_message, message);
+    strcat(fake_message, "_HACK");
+    printf("原始訊息 : %s\n",message);
+    printf("竄改訊息 : %s\n",fake_message); // 在原始訊息後方強行加上惡意篡改字串
+
+    // 用被篡改過的髒訊息再次丟入驗證函式
+    if (bls_verify(pairing,fake_message,sig,&key))
+        printf("攻擊成功 (異常)\n");
+    else
+        printf("攻擊失敗，驗證拒絕\n");
+
+    element_clear(sig);
+    clear_keypair(&key);
     pairing_clear(pairing);
 
     return 0;
-}
-
-KeyPair key;
-generate_keypair(pairing,
-                 &key);
-
-char message[256];
-
-printf("\n====================================\n");
-printf("      BLS Signature System V1\n");
-printf("====================================\n");
-
-printf("請輸入訊息: ");
-
-fgets(message, sizeof(message), stdin);
-
-message[strcspn(message, "\n")] = 0;
-
-element_t sig;
-
-bls_sign(pairing, message, &key, sig);
-
-printf("\n[Alice]\n");
-printf("訊息: %s\n", message);
-
-element_printf("\nPublic Key:\n%B\n", key.pk);
-
-element_printf("\nSignature:\n%B\n", sig);
-
-int original_size =
-    pairing_length_in_bytes_G1(pairing);
-
-int compressed_size =
-    pairing_length_in_bytes_compressed_G1(pairing);
-
-unsigned char *data =
-    malloc(compressed_size);
-
-element_to_bytes_compressed(data, sig);
-
-printf("\n[Network]\n");
-
-printf("原始簽章大小 : %d bytes\n",
-       original_size);
-
-printf("壓縮後大小 : %d bytes\n",
-       compressed_size);
-
-printf("節省空間 : %.2f%%\n",
-       100.0 *
-       (original_size - compressed_size)
-       / original_size);
-
-element_clear(sig);
-
-element_init_G1(sig, pairing);
-
-element_from_bytes_compressed(sig, data);
-
-free(data);
-
-printf("\n[Bob]\n");
-printf("已成功接收並還原簽章\n");
-
-if (bls_verify(pairing,
-               message,
-               sig,
-               &key)) {
-
-    printf("驗證成功\n");
-}
-else {
-
-    printf("驗證失敗\n");
-}
-
-printf("\n===== Attack Test =====\n");
-
-char fake_message[256];
-
-strcpy(fake_message, message);
-
-strcat(fake_message, "_HACK");
-
-printf("原始訊息 : %s\n",
-       message);
-
-printf("竄改訊息 : %s\n",
-       fake_message);
-
-if (bls_verify(pairing,
-               fake_message,
-               sig,
-               &key))
-{
-    printf("攻擊成功 (異常)\n");
-}
-else
-{
-    printf("攻擊失敗，驗證拒絕\n");
-}
-
-element_clear(sig);
-
-clear_keypair(&key);
-
-pairing_clear(pairing);
-
-return 0;
-
 }
 
