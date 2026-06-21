@@ -218,7 +218,7 @@ int main() {
 
     pairing_t pairing;
     // 初始化 pairing 矩陣
-    if (!init_pairing_from_file(pairing, "param/g149.param")){
+    if (!init_pairing_from_file(pairing, "param/a.param")){
         printf("Error opening param file\n");
         return 1;
     }
