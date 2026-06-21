@@ -218,14 +218,14 @@ int main() {
 
     pairing_t pairing;
     // 初始化 pairing 矩陣
-    if (!init_pairing_from_file(pairing, "param/a.param")){
+    if (!init_pairing_from_file(pairing, "param/g149.param")){
         printf("Error opening param file\n");
         return 1;
     }
 
     // 列印功能選擇選單
     printf("\n");
-    printf("1. Multiple Message Demo\n");
+    printf("1. Single Signature Demo (with Compression)\n");
     printf("2. Aggregate Signature Demo\n");
     printf("\nChoose: ");
     scanf("%d",&choice);
