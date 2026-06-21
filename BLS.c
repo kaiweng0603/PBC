@@ -13,7 +13,7 @@ typedef struct {
 
 // =========== 把message雜湊 =========== 
 void hash_to_G1(element_t h, const char *message) {
-    element_from_hash(h, message, strlen(message));
+    element_from_hash(h, (void *)message, strlen(message));
 }
 
 
@@ -53,14 +53,14 @@ int init_pairing_from_file(pairing_t pairing, const char *filename) {
 void generate_keypair(pairing_t pairing, KeyPair *key) {
 
     // 初始化。
-    element_init_G1(key->g, pairing);   // generator
+    element_init_G2(key->g, pairing);   // generator
     element_init_Zr(key->sk, pairing);  // secret key
-    element_init_G1(key->pk, pairing);  // public key
+    element_init_G2(key->pk, pairing);  // public key
 
-    element_random(key->g);     // 橢圓曲線群G1上的一個點。
+    element_random(key->g);     // 橢圓曲線群G2上的一個點。
     element_random(key->sk);    // Zr群中的一個常數。
 
-    element_pow_zn(key->pk, key->g, key->sk);  // pk = g^sk; g做sk次點加法，也是橢圓曲線群G1上的一個點。
+    element_pow_zn(key->pk, key->g, key->sk);  // pk = g^sk; g做sk次點加法，也是橢圓曲線群G2上的一個點。
 }
 
 
@@ -120,12 +120,9 @@ int main() {
 
     pairing_t pairing;
 
-   if (!init_pairing_from_file(
-        pairing,
-        "param/a.param"))
-    {
-    printf("Error opening param file\n");
-    return 1;
+    if (!init_pairing_from_file(pairing,"param/a.param")){
+        printf("Error opening param file\n");
+        return 1;
     }
     KeyPair key;
     generate_keypair(pairing, &key);
@@ -134,6 +131,20 @@ int main() {
 
     element_t sig;
     bls_sign(pairing, message, &key, sig);
+    printf("--- Alice 已經成功生成簽名 ---\n");
+
+    // 模擬壓縮網路傳輸
+    int n = pairing_length_in_bytes_compressed_G1(pairing); // 取得壓縮長度
+    unsigned char *data = malloc(n); 
+    element_to_bytes_compressed(data, sig); // Alice 將 sig 點壓縮寫入 data 陣列
+    printf("簽名已成功點壓縮為 %d 位元組，準備進行模擬傳輸...\n", n);
+
+    // 模擬網路傳輸... Bob 在網絡另一端收到 data 陣列
+    element_clear(sig); // 把舊的記憶體 sig 徹底抹除
+    element_init_G1(sig, pairing); // 重新建立空殼
+    element_from_bytes_compressed(sig, data); //解壓還原
+    free(data); // 釋放記憶體
+    printf("--- Bob 已經成功接收並還原簽名，開始驗證 ---\n");
 
     if (bls_verify(pairing, message, sig, &key)) {
         printf("驗證成功\n");
