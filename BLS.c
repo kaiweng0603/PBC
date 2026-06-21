@@ -118,7 +118,6 @@ void clear_keypair(KeyPair *key) {
 
 int main() {
 
-```
 pairing_t pairing;
 
 if (!init_pairing_from_file(pairing, "param/a.param")) {
@@ -232,7 +231,6 @@ clear_keypair(&key);
 pairing_clear(pairing);
 
 return 0;
-```
 
 }
 
