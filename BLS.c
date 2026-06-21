@@ -120,40 +120,119 @@ int main() {
 
     pairing_t pairing;
 
-    if (!init_pairing_from_file(pairing,"param/a.param")){
+    if (!init_pairing_from_file(pairing, "param/a.param")) {
         printf("Error opening param file\n");
         return 1;
     }
+
     KeyPair key;
     generate_keypair(pairing, &key);
 
-    const char *message = "Hello BLS Signature!";
+    int msg_count;
 
-    element_t sig;
-    bls_sign(pairing, message, &key, sig);
-    printf("--- Alice 已經成功生成簽名 ---\n");
+    printf("\n====================================\n");
+    printf("     BLS Multiple Message System\n");
+    printf("====================================\n");
 
-    // 模擬壓縮網路傳輸
-    int n = pairing_length_in_bytes_compressed_G1(pairing); // 取得壓縮長度
-    unsigned char *data = malloc(n); 
-    element_to_bytes_compressed(data, sig); // Alice 將 sig 點壓縮寫入 data 陣列
-    printf("簽名已成功點壓縮為 %d 位元組，準備進行模擬傳輸...\n", n);
+    printf("請輸入訊息數量: ");
+    scanf("%d", &msg_count);
+    getchar();
 
-    // 模擬網路傳輸... Bob 在網絡另一端收到 data 陣列
-    element_clear(sig); // 把舊的記憶體 sig 徹底抹除
-    element_init_G1(sig, pairing); // 重新建立空殼
-    element_from_bytes_compressed(sig, data); //解壓還原
-    free(data); // 釋放記憶體
-    printf("--- Bob 已經成功接收並還原簽名，開始驗證 ---\n");
+    for (int i = 0; i < msg_count; i++) {
 
-    if (bls_verify(pairing, message, sig, &key)) {
-        printf("驗證成功\n");
-    } else {
-        printf("驗證失敗\n");
+        char message[256];
+
+        printf("\n------------------------------------\n");
+        printf("Message %d: ", i + 1);
+
+        fgets(message, sizeof(message), stdin);
+
+        message[strcspn(message, "\n")] = 0;
+
+        element_t sig;
+
+        // Alice 簽章
+        bls_sign(pairing, message, &key, sig);
+
+        printf("\n[Alice]\n");
+        printf("訊息: %s\n", message);
+        printf("已成功生成簽章\n");
+
+        // 壓縮簽章
+        int compressed_size =
+            pairing_length_in_bytes_compressed_G1(pairing);
+
+        int original_size =
+            pairing_length_in_bytes_G1(pairing);
+
+        unsigned char *data =
+            malloc(compressed_size);
+
+        element_to_bytes_compressed(data, sig);
+
+        printf("\n[Network]\n");
+        printf("原始簽章大小 : %d bytes\n",
+               original_size);
+
+        printf("壓縮後大小   : %d bytes\n",
+               compressed_size);
+
+        printf("準備進行模擬傳輸...\n");
+
+        // Bob 收到資料
+        element_clear(sig);
+
+        element_init_G1(sig, pairing);
+
+        element_from_bytes_compressed(sig, data);
+
+        free(data);
+
+        printf("\n[Bob]\n");
+        printf("已成功接收並還原簽章\n");
+
+        // 驗證
+        if (bls_verify(pairing,
+                       message,
+                       sig,
+                       &key)) {
+
+            printf("驗證成功\n");
+        }
+        else {
+
+            printf("驗證失敗\n");
+        }
+
+        // 攻擊測試
+        printf("\n[Attack Test]\n");
+
+        char fake_message[256];
+
+        strcpy(fake_message, message);
+
+        strcat(fake_message, "_HACK");
+
+        printf("原始訊息 : %s\n", message);
+        printf("竄改訊息 : %s\n", fake_message);
+
+        if (bls_verify(pairing,
+                       fake_message,
+                       sig,
+                       &key)) {
+
+            printf("攻擊成功 (不正常)\n");
+        }
+        else {
+
+            printf("攻擊失敗，驗證拒絕\n");
+        }
+
+        element_clear(sig);
     }
 
-    element_clear(sig);
     clear_keypair(&key);
+
     pairing_clear(pairing);
 
     return 0;
