@@ -131,11 +131,21 @@ void aggregate_demo(pairing_t pairing)
     printf("      Aggregate Signature Demo\n");
     printf("====================================\n");
 
-    for(int i=0;i<USER_COUNT;i++)
-    {
-        generate_keypair(pairing,
-                         &users[i]);
-    }
+    generate_keypair(pairing,
+                 &users[0]);
+
+for(int i=1;i<USER_COUNT;i++)
+{
+    generate_keypair(pairing,
+                     &users[i]);
+
+    element_set(users[i].g,
+                users[0].g);
+
+    element_pow_zn(users[i].pk,
+                   users[i].g,
+                   users[i].sk);
+}
 
     element_t agg_sig;
 
