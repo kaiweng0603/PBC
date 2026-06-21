@@ -115,8 +115,125 @@ void clear_keypair(KeyPair *key) {
     element_clear(key->pk);
 }
 
+void aggregate_demo(pairing_t pairing)
+{
+    #define USER_COUNT 3
+
+    KeyPair users[USER_COUNT];
+
+    char *messages[USER_COUNT] = {
+        "Hello",
+        "World",
+        "BLS"
+    };
+
+    printf("\n====================================\n");
+    printf("      Aggregate Signature Demo\n");
+    printf("====================================\n");
+
+    for(int i=0;i<USER_COUNT;i++)
+    {
+        generate_keypair(pairing,
+                         &users[i]);
+    }
+
+    element_t agg_sig;
+
+    element_init_G1(agg_sig,
+                    pairing);
+
+    element_set1(agg_sig);
+
+    for(int i=0;i<USER_COUNT;i++)
+    {
+        element_t sig;
+
+        bls_sign(pairing,
+                 messages[i],
+                 &users[i],
+                 sig);
+
+        printf("\nUser %d\n",
+               i + 1);
+
+        printf("Message : %s\n",
+               messages[i]);
+
+        element_mul(agg_sig,
+                    agg_sig,
+                    sig);
+
+        element_clear(sig);
+    }
+
+    element_t left;
+    element_t right;
+
+    element_init_GT(left,
+                    pairing);
+
+    element_init_GT(right,
+                    pairing);
+
+    pairing_apply(left,
+                  agg_sig,
+                  users[0].g,
+                  pairing);
+
+    element_set1(right);
+
+    for(int i=0;i<USER_COUNT;i++)
+    {
+        element_t h;
+        element_t temp;
+
+        element_init_G1(h,
+                        pairing);
+
+        element_init_GT(temp,
+                        pairing);
+
+        hash_to_G1(h,
+                   messages[i]);
+
+        pairing_apply(temp,
+                      h,
+                      users[i].pk,
+                      pairing);
+
+        element_mul(right,
+                    right,
+                    temp);
+
+        element_clear(h);
+        element_clear(temp);
+    }
+
+    printf("\n");
+
+    if(!element_cmp(left,
+                    right))
+    {
+        printf("Aggregate Verify Success\n");
+    }
+    else
+    {
+        printf("Aggregate Verify Failed\n");
+    }
+
+    element_clear(left);
+    element_clear(right);
+    element_clear(agg_sig);
+
+    for(int i=0;i<USER_COUNT;i++)
+    {
+        clear_keypair(&users[i]);
+    }
+}
+
 
 int main() {
+int choice;
 
 pairing_t pairing;
 
@@ -125,8 +242,29 @@ if (!init_pairing_from_file(pairing, "param/a.param")) {
     return 1;
 }
 
+printf("\n");
+printf("1. Multiple Message Demo\n");
+printf("2. Aggregate Signature Demo\n");
+
+printf("\nChoose: ");
+
+scanf("%d",
+      &choice);
+
+getchar();
+
+if(choice == 2)
+{
+    aggregate_demo(pairing);
+
+    pairing_clear(pairing);
+
+    return 0;
+}
+
 KeyPair key;
-generate_keypair(pairing, &key);
+generate_keypair(pairing,
+                 &key);
 
 char message[256];
 
