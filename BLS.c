@@ -120,11 +120,13 @@ int main() {
 
     pairing_t pairing;
 
-    if (!init_pairing_from_file(pairing, "../pbc-1.0.0/param/a.param")) {
-        printf("Error opening param file\n");
-        return 1;
+   if (!init_pairing_from_file(
+        pairing,
+        "/mnt/c/Users/user/Downloads/pbc-0.5.14/param/a.param"))
+    {
+    printf("Error opening param file\n");
+    return 1;
     }
-
     KeyPair key;
     generate_keypair(pairing, &key);
 
